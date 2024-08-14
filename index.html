@@ -272,6 +272,37 @@
             }
         }
 
+        // Funktion zum Bearbeiten des Straßennamens und Laden der Informationen aus Wikipedia
+        async function loadStreetInfo(streetName) {
+            let searchTerm = streetName;
+            if (searchTerm.includes('-')) {
+                searchTerm = searchTerm.substring(0, searchTerm.lastIndexOf('-'));
+                searchTerm = searchTerm.replace(/-/g, ' ');
+            } else {
+                searchTerm = searchTerm.replace(/straße\b|gasse\b|weg\b|platz\b|ring\b|allee\b/gi, '').trim();
+            }
+
+            // Lade Informationen aus Wikipedia
+            const url = `https://de.wikipedia.org/w/api.php?action=query&prop=extracts&explaintext&format=json&titles=${encodeURIComponent(searchTerm)}&origin=*`;
+            const response = await fetch(url);
+            const data = await response.json();
+            const pages = data.query.pages;
+
+            if (pages) {
+                const page = Object.values(pages)[0];
+                if (page.extract) {
+                    document.getElementById("sidebar-content").innerHTML = page.extract;
+                    toggleSidebar(true);
+                } else {
+                    document.getElementById("sidebar-content").innerHTML = "Keine Informationen gefunden.";
+                    toggleSidebar(true);
+                }
+            } else {
+                document.getElementById("sidebar-content").innerHTML = "Keine Informationen gefunden.";
+                toggleSidebar(true);
+            }
+        }
+
         function updateScoreboard() {
             document.getElementById("correct-score").textContent = correctScore;
             document.getElementById("wrong-score").textContent = wrongScore;
