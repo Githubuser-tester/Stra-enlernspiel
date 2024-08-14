@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Finde die Straße</title>
+    <style>
+        body {
+            margin: 0;
+            font-family: 'Arial', sans-serif;
+            background-color: #121212;
+            color: #ffffff;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        h1 {
+            font-size: 2rem;
+            margin-bottom: 20px;
+        }
+
+        #map {
+            width: 80%;
+            height: 50vh;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            position: relative;
+        }
+
+        #task {
+            margin: 10px 0;
+            font-size: 1.2rem;
+            display: flex;
+            align-items: center;
+        }
+
+        #feedback {
+            margin: 10px 0;
+            font-size: 1.2rem;
+        }
+
+        #info-button {
+            background-color: #4caf50;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            font-size: 1rem;
+            cursor: pointer;
+            margin-left: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #sidebar {
+            position: fixed;
+            top: 0;
+            right: -300px;
+            width: 300px;
+            height: 100%;
+            background-color: #1e1e1e;
+            box-shadow: -2px 0 5px rgba(0, 0, 0, 0.5);
+            transition: right 0.3s ease;
+            overflow-y: auto;
+            padding: 20px;
+            z-index: 1000;
+        }
+
+        #sidebar.open {
+            right: 0;
+        }
+
+        #sidebar h2 {
+            font-size: 1.5rem;
+            margin-bottom: 10px;
+        }
+
+        #sidebar p {
+            font-size: 1rem;
+            line-height: 1.5;
+        }
+
+        #close-sidebar {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background-color: #f44336;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            font-size: 1rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #scoreboard {
+            font-size: 1rem;
+            margin-top: 10px;
+            padding: 20px;
+            background-color: #1e1e1e;
+            border-radius: 8px;
+            width: 80%;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .score-section {
+            margin-bottom: 15px;
+        }
+
+        .score-section h2 {
+            font-size: 1.5rem;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+
+        .score-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            max-height: 100px;
+            overflow-y: auto;
+            border: 1px solid #333;
+            border-radius: 8px;
+        }
+
+        .score-list li {
+            padding: 10px;
+            cursor: pointer;
+        }
+
+        .score-list li:hover {
+            background-color: #333;
+        }
+
+        .correct {
+            color: #4caf50;
+        }
+
+        .wrong {
+            color: #f44336;
+        }
+    </style>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+</head>
+<body>
+    <h1>Finde die Straße</h1>
+    <p id="task">
+        Finde die Straße: <span id="street-name"></span>
+        <button id="info-button">i</button>
+    </p>
+    <div id="map"></div>
+    <p id="feedback"></p>
+    
+    <div id="sidebar">
+        <button id="close-sidebar">X</button>
+        <h2>Informationen</h2>
+        <div id="sidebar-content"></div>
+    </div>
+
+    <div id="scoreboard">
+        <div class="score-section">
+            <h2>Ergebnisse</h2>
+            <div>Korrekt geraten: <span id="correct-score" class="correct">0</span></div>
+            <div>Falsch geraten: <span id="wrong-score" class="wrong">0</span></div>
+        </div>
+        <div class="score-section">
+            <h2>Richtig geraten</h2>
+            <ul id="correct-list" class="score-list correct"></ul>
+        </div>
+        <div class="score-section">
+            <h2>Falsch geraten</h2>
+            <ul id="wrong-list" class="score-list wrong"></ul>
+        </div>
+    </div>
+
+    <script>
+        var map = L.map('map').setView([50.9271, 11.5892], 13); // Jena, Markt
+
+        // OpenStreetMap Layer hinzufügen
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '© OpenStreetMap contributors',
+        }).addTo(map);
+
+        const marketLatLng = [50.9271, 11.5892]; // Koordinaten des Marktplatzes in Jena
+        let searchRadius = 300; // Startet mit einem Radius von 300 Metern
+        let streets = [];
+        let currentStreet;
+        let correctScore = 0;
+        let wrongScore = 0;
+        let correctStreets = [];
+        let wrongStreets = [];
+
+        // Funktion zum Berechnen der Entfernung zwischen zwei Punkten (Haversine-Formel)
+        function calculateDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371; // Radius der Erde in Kilometern
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = 
+                0.5 - Math.cos(dLat) / 2 + 
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+                (1 - Math.cos(dLon)) / 2;
+
+            return R * 2 * Math.asin(Math.sqrt(a));
+        }
+
+        // Funktion zum Abrufen aller Straßen innerhalb des aktuellen Radius vom Markt
+        async function loadStreets() {
+            const query = `
+                [out:json];
+                (
+                    way["highway"](around:${searchRadius},${marketLatLng[0]},${marketLatLng[1]});
+                );
+                out tags geom;
+            `;
+            const url = 'https://overpass-api.de/api/interpreter?data=' + encodeURIComponent(query);
+            
+            const response = await fetch(url);
+            const data = await response.json();
+
+            // Filtere Straßen ohne Namen heraus
+            streets = data.elements
+                .filter(element => element.tags.name) // Nur Straßen mit einem definierten Namen
+                .map(element => ({
+                    name: element.tags.name,
+                    id: element.id,
+                    coords: element.geometry.map(coord => [coord.lat, coord.lon])
+                }));
+
+            selectRandomStreet();
+        }
+
+        function selectRandomStreet() {
+            if (streets.length > 0) {
+                const randomIndex = Math.floor(Math.random() * streets.length);
+                currentStreet = streets[randomIndex];
+                document.getElementById("street-name").textContent = currentStreet.name;
+            } else {
+                document.getElementById("feedback").textContent = "Keine Straßen gefunden. Bitte aktualisiere die Seite.";
+            }
+        }
+
+        // Funktion zum Überprüfen der Straße mit Hilfe der Nominatim API
+        async function checkStreet(lat, lon) {
+            const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}`;
+            const response = await fetch(url);
+            const data = await response.json();
+            const streetName = data.address.road || data.address.pedestrian || data.address.residential || "";
+
+            return streetName.toLowerCase();
+        }
+
+        function compareStreetNames(name1, name2) {
+            return name1.trim().toLowerCase() === name2.trim().toLowerCase();
+        }
+
+        // Funktion zum Hervorheben der richtigen Straße und Zentrierung der Karte
+        async function highlightCorrectStreet() {
+            const query = `
+[out:json];
+                way(${currentStreet.id});
+                out geom;
+            `;
+            const url = 'https://overpass-api.de/api/interpreter?data=' + encodeURIComponent(query);
+            const response = await fetch(url);
+            const data = await response.json();
+
+            if (data.elements.length > 0) {
+                const coordinates = data.elements[0].geometry.map(coord => [coord.lat, coord.lon]);
+                const polyline = L.polyline(coordinates, {
+                    color: 'blue',
+                    weight: 5,
+                    opacity: 0.7
+                }).addTo(map);
+
+                // Marker an der Mitte der Straße platzieren
+                const centerIndex = Math.floor(coordinates.length / 2);
+                const centerLatLng = coordinates[centerIndex];
+                L.marker(centerLatLng, {color: 'blue'}).addTo(map).bindPopup("Hier ist die richtige Straße").openPopup();
+
+                // Karte auf die richtige Straße zentrieren
+                map.setView(centerLatLng, 15);
+            }
+        }
+
+        // Funktion zum Bearbeiten des Straßennamens und Laden der Informationen aus Wikipedia
+        async function loadStreetInfo(streetName) {
+            let searchTerm = streetName;
+            if (searchTerm.includes('-')) {
+                searchTerm = searchTerm.substring(0, searchTerm.lastIndexOf('-'));
+                searchTerm = searchTerm.replace(/-/g, ' ');
+            } else {
+                searchTerm = searchTerm.replace(/straße\b|gasse\b|weg\b|platz\b|ring\b|allee\b/gi, '').trim();
+            }
+
+            // Lade Informationen aus Wikipedia
+            const url = `https://de.wikipedia.org/w/api.php?action=query&prop=extracts&explaintext&format=json&titles=${encodeURIComponent(searchTerm)}&origin=*`;
+            const response = await fetch(url);
+            const data = await response.json();
+            const pages = data.query.pages;
+
+            if (pages) {
+                const page = Object.values(pages)[0];
+                if (page.extract) {
+                    document.getElementById("sidebar-content").innerHTML = page.extract;
+                    toggleSidebar(true);
+                } else {
+                    document.getElementById("sidebar-content").innerHTML = "Keine Informationen gefunden.";
+                    toggleSidebar(true);
+                }
+            } else {
+                document.getElementById("sidebar-content").innerHTML = "Keine Informationen gefunden.";
+                toggleSidebar(true);
+            }
+        }
+
+        function updateScoreboard() {
+            document.getElementById("correct-score").textContent = correctScore;
+            document.getElementById("wrong-score").textContent = wrongScore;
+
+            const correctList = document.getElementById("correct-list");
+            correctList.innerHTML = '';
+            correctStreets.forEach(street => {
+                const li = document.createElement("li");
+                li.textContent = street.name;
+                li.onclick = () => map.setView(street.coords[0], 15);
+                correctList.appendChild(li);
+            });
+
+            const wrongList = document.getElementById("wrong-list");
+            wrongList.innerHTML = '';
+            wrongStreets.forEach(street => {
+                const li = document.createElement("li");
+                li.textContent = street.name;
+                li.onclick = () => map.setView(street.coords[0], 15);
+                wrongList.appendChild(li);
+            });
+        }
+
+        function addStreetToList(street, list, listArray) {
+            if (!listArray.some(s => s.name === street.name)) {
+                listArray.push(street);
+                const li = document.createElement("li");
+                li.textContent = street.name;
+                li.onclick = () => map.setView(street.coords[0], 15);
+                list.appendChild(li);
+            }
+        }
+
+        function toggleSidebar(open) {
+            const sidebar = document.getElementById("sidebar");
+            if (open) {
+                sidebar.classList.add("open");
+            } else {
+                sidebar.classList.remove("open");
+            }
+        }
+
+        document.getElementById("close-sidebar").onclick = function() {
+            toggleSidebar(false); // Schließe die Seitenleiste beim Klicken auf das "X"
+        };
+
+        document.getElementById("info-button").onclick = function() {
+            const sidebar = document.getElementById("sidebar");
+            if (sidebar.classList.contains("open")) {
+                toggleSidebar(false); // Schließe die Seitenleiste, wenn sie bereits offen ist
+            } else {
+                loadStreetInfo(currentStreet.name); // Lade Informationen und öffne die Seitenleiste
+            }
+        };
+
+        map.on('click', async function(e) {
+            const lat = e.latlng.lat;
+            const lon = e.latlng.lng;
+            const clickedStreet = await checkStreet(lat, lon);
+
+            if (compareStreetNames(clickedStreet, currentStreet.name)) {
+                document.getElementById("feedback").textContent = `Richtig! Du hast die Straße gefunden: ${clickedStreet}`;
+                L.marker([lat, lon], {color: 'green'}).addTo(map).bindPopup("Richtig").openPopup();
+                correctScore++;
+                addStreetToList(currentStreet, document.getElementById("correct-list"), correctStreets);
+                searchRadius += 100; // Erhöhe den Suchradius um 100 Meter
+            } else {
+                document.getElementById("feedback").textContent = `Falsch! Du hast auf die Straße ${clickedStreet} geklickt.`;
+                L.marker([lat, lon], {color: 'red'}).addTo(map).bindPopup("Falsch").openPopup();
+                wrongScore++;
+                addStreetToList(currentStreet, document.getElementById("wrong-list"), wrongStreets);
+                searchRadius = 300; // Setze den Suchradius zurück auf 300 Meter
+
+                // Hervorhebung der richtigen Straße
+                await highlightCorrectStreet();
+            }
+
+            // Scoreboard aktualisieren
+            updateScoreboard();
+
+            // Lade die Straßen im neuen Radius und wähle eine zufällige Straße aus
+            loadStreets();
+        });
+
+        // Starten mit der Auswahl und dem Laden der Straßen
+        loadStreets();
+    </script>
+</body>
+</html>
