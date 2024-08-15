@@ -208,12 +208,12 @@ async function loadStreets() {
 
     // Filtere Straßen ohne Namen und den Busbahnhof heraus
     streets = data.elements
-        .filter(element => element.tags.name && !/busbahnhof/i.test(element.tags.name)) // Nur Straßen mit einem definierten Namen und nicht "Busbahnhof"
-        .map(element => ({
-            name: element.tags.name,
-            id: element.id,
-            coords: element.geometry.map(coord => [coord.lat, coord.lon])
-        }));
+    .filter(element => element.tags.name && !/busbahnhof|passage weimarischer hof/i.test(element.tags.name)) // Filtert "Busbahnhof" und "Passage Weimarischer Hof" heraus
+    .map(element => ({
+        name: element.tags.name,
+        id: element.id,
+        coords: element.geometry.map(coord => [coord.lat, coord.lon])
+    }));
 
     selectRandomStreet();
 }
