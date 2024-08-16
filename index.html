@@ -208,7 +208,7 @@ async function loadStreets() {
 
     // Filtere Straßen ohne Namen und den Busbahnhof heraus
     streets = data.elements
-    .filter(element => element.tags.name && !/busbahnhof|passage weimarischer hof/i.test(element.tags.name)) // Filtert "Busbahnhof" und "Passage Weimarischer Hof" heraus
+    .filter(element => element.tags.name && !/busbahnhof|stadtzentrum|passage weimarischer hof/i.test(element.tags.name)) // Filtert "Busbahnhof" und "Passage Weimarischer Hof" heraus
     .map(element => ({
         name: element.tags.name,
         id: element.id,
