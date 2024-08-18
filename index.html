@@ -172,241 +172,232 @@
     </div>
 
     <script>
-	var map = L.map('map', {
-    zoomControl: false, // Entfernt die Zoom-Buttons
-}).setView([50.9271, 11.5892], 13); // Jena, Markt
-
-// OpenStreetMap Layer hinzufügen
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19,
-    attribution: '© OpenStreetMap contributors',
-}).addTo(map);
-
-const marketLatLng = [50.9271, 11.5892]; // Koordinaten des Marktplatzes in Jena
-let searchRadius = 50; // Startet mit einem Radius von 50 Metern
-let streets = [];
-let currentStreet;
-let correctScore = 0;
-let wrongScore = 0;
-let correctStreets = [];
-let wrongStreets = [];
-let recentStreets = []; // Warteschlange für die letzten 5 abgefragten Straßen
-
-// Funktion zum Abrufen aller Straßen innerhalb des aktuellen Radius vom Markt
-async function loadStreets() {
-    const query = `
-        [out:json];
-        (
-            way["highway"](around:${searchRadius},${marketLatLng[0]},${marketLatLng[1]});
-        );
-        out tags geom;
-    `;
-    const url = 'https://overpass-api.de/api/interpreter?data=' + encodeURIComponent(query);
-    
-    const response = await fetch(url);
-    const data = await response.json();
-
-    // Filtere Straßen ohne Namen und den Busbahnhof heraus
-    streets = data.elements
-    .filter(element => element.tags.name && !/busbahnhof|stadtzentrum|passage weimarischer hof/i.test(element.tags.name)) // Filtert "Busbahnhof" und "Passage Weimarischer Hof" heraus
-    .map(element => ({
-        name: element.tags.name,
-        id: element.id,
-        coords: element.geometry.map(coord => [coord.lat, coord.lon])
-    }));
-
-    selectRandomStreet();
-}
-
-function selectRandomStreet() {
-    if (streets.length > 0) {
-        let randomIndex;
-        let selectedStreet;
-
-        // Schleife, um eine Straße auszuwählen, die nicht in den letzten 5 verwendet wurde
-        do {
-            randomIndex = Math.floor(Math.random() * streets.length);
-            selectedStreet = streets[randomIndex];
-        } while (recentStreets.includes(selectedStreet.name) && streets.length > 5);
-
-        // Aktualisiere die Warteschlange der zuletzt verwendeten Straßen
-        recentStreets.push(selectedStreet.name);
-        if (recentStreets.length > 5) {
-            recentStreets.shift(); // Entfernt das älteste Element, um Platz für das neue zu schaffen
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/service-worker.js').then(function(registration) {
+                console.log('Service Worker registered with scope:', registration.scope);
+            }).catch(function(error) {
+                console.log('Service Worker registration failed:', error);
+            });
         }
 
-        currentStreet = selectedStreet;
-        document.getElementById("street-name").textContent = currentStreet.name;
-    } else {
-        document.getElementById("feedback").textContent = "Keine Straßen gefunden. Bitte aktualisiere die Seite.";
-    }
-}
+        var map = L.map('map', {
+            zoomControl: false,
+        }).setView([50.9271, 11.5892], 13); // Jena, Markt
 
-// Funktion zum Überprüfen der Straße mit Hilfe der Nominatim API
-async function checkStreet(lat, lon) {
-    const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}`;
-    const response = await fetch(url);
-    const data = await response.json();
-    const streetName = data.address.road || data.address.pedestrian || data.address.residential || "";
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '© OpenStreetMap contributors',
+        }).addTo(map);
 
-    return streetName.toLowerCase();
-}
+        const marketLatLng = [50.9271, 11.5892];
+        let searchRadius = 50;
+        let streets = [];
+        let currentStreet;
+        let correctScore = 0;
+        let wrongScore = 0;
+        let correctStreets = [];
+        let wrongStreets = [];
+        let recentStreets = [];
 
-function compareStreetNames(name1, name2) {
-    return name1.trim().toLowerCase() === name2.trim().toLowerCase();
-}
+        async function loadStreets() {
+            const query = `
+                [out:json];
+                (
+                    way["highway"](around:${searchRadius},${marketLatLng[0]},${marketLatLng[1]});
+                );
+                out tags geom;
+            `;
+            const url = 'https://overpass-api.de/api/interpreter?data=' + encodeURIComponent(query);
+            
+            const response = await fetch(url);
+            const data = await response.json();
 
-// Funktion zum Hervorheben der richtigen Straße
-async function highlightCorrectStreet(color) {
-    const query = `
-        [out:json];
-        way["name"="${currentStreet.name}"](around:500,${marketLatLng[0]},${marketLatLng[1]});
-        out geom;
-    `;
-    const url = 'https://overpass-api.de/api/interpreter?data=' + encodeURIComponent(query);
-    const response = await fetch(url);
-    const data = await response.json();
+            streets = data.elements
+            .filter(element => element.tags.name && !/busbahnhof|stadtzentrum|passage weimarischer hof/i.test(element.tags.name))
+            .map(element => ({
+                name: element.tags.name,
+                id: element.id,
+                coords: element.geometry.map(coord => [coord.lat, coord.lon])
+            }));
 
-    data.elements.forEach(element => {
-        if (element.type === "way") {
-            const coordinates = element.geometry.map(coord => [coord.lat, coord.lon]);
-            L.polyline(coordinates, {
-                color: color,
-                weight: 5,
-                opacity: 0.7
-            }).addTo(map);
+            selectRandomStreet();
         }
-    });
 
-    // Karte auf die Mitte des ersten Segments zentrieren
-    if (data.elements.length > 0) {
-        const firstSegment = data.elements[0].geometry;
-        const centerIndex = Math.floor(firstSegment.length / 2);
-        const centerLatLng = [firstSegment[centerIndex].lat, firstSegment[centerIndex].lon];
-        map.setView(centerLatLng, 15);
-    }
-}
+        function selectRandomStreet() {
+            if (streets.length > 0) {
+                let randomIndex;
+                let selectedStreet;
 
-// Funktion zum Bearbeiten des Straßennamens und Laden der Informationen aus Wikipedia
-async function loadStreetInfo(streetName) {
-    let searchTerm = streetName;
-    if (searchTerm.includes('-')) {
-        searchTerm = searchTerm.substring(0, searchTerm.lastIndexOf('-'));
-        searchTerm = searchTerm.replace(/-/g, ' ');
-    } else {
-        searchTerm = searchTerm.replace(/straße\b|gasse\b|weg\b|platz\b|ring\b|allee\b/gi, '').trim();
-    }
+                do {
+                    randomIndex = Math.floor(Math.random() * streets.length);
+                    selectedStreet = streets[randomIndex];
+                } while (recentStreets.includes(selectedStreet.name) && streets.length > 5);
 
-    // Lade Informationen aus Wikipedia
-    const url = `https://de.wikipedia.org/w/api.php?action=query&prop=extracts&explaintext&format=json&titles=${encodeURIComponent(searchTerm)}&origin=*`;
-    const response = await fetch(url);
-    const data = await response.json();
-    const pages = data.query.pages;
+                recentStreets.push(selectedStreet.name);
+                if (recentStreets.length > 5) {
+                    recentStreets.shift();
+                }
 
-    if (pages) {
-        const page = Object.values(pages)[0];
-        if (page.extract) {
-            document.getElementById("sidebar-content").innerHTML = page.extract;
-            toggleSidebar(true);
-        } else {
-            document.getElementById("sidebar-content").innerHTML = "Keine Informationen gefunden.";
-            toggleSidebar(true);
+                currentStreet = selectedStreet;
+                document.getElementById("street-name").textContent = currentStreet.name;
+            } else {
+                document.getElementById("feedback").textContent = "Keine Straßen gefunden. Bitte aktualisiere die Seite.";
+            }
         }
-    } else {
-        document.getElementById("sidebar-content").innerHTML = "Keine Informationen gefunden.";
-        toggleSidebar(true);
-    }
-}
 
-function updateScoreboard() {
-    document.getElementById("correct-score").textContent = correctScore;
-    document.getElementById("wrong-score").textContent = wrongScore;
+        async function checkStreet(lat, lon) {
+            const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}`;
+            const response = await fetch(url);
+            const data = await response.json();
+            const streetName = data.address.road || data.address.pedestrian || data.address.residential || "";
 
-    const correctList = document.getElementById("correct-list");
-    correctList.innerHTML = '';
-    correctStreets.forEach(street => {
-        const li = document.createElement("li");
-        li.textContent = street.name;
-        li.onclick = () => map.setView(street.coords[0], 15);
-        correctList.appendChild(li);
-    });
+            return streetName.toLowerCase();
+        }
 
-    const wrongList = document.getElementById("wrong-list");
-    wrongList.innerHTML = '';
-    wrongStreets.forEach(street => {
-        const li = document.createElement("li");
-        li.textContent = street.name;
-        li.onclick = () => map.setView(street.coords[0], 15);
-        wrongList.appendChild(li);
-    });
-}
+        function compareStreetNames(name1, name2) {
+            return name1.trim().toLowerCase() === name2.trim().toLowerCase();
+        }
 
-function addStreetToList(street, list, listArray) {
-    if (!listArray.some(s => s.name === street.name)) {
-        listArray.push(street);
-        const li = document.createElement("li");
-        li.textContent = street.name;
-        li.onclick = () => map.setView(street.coords[0], 15);
-        list.appendChild(li);
-    }
-}
+        async function highlightCorrectStreet(color) {
+            const query = `
+                [out:json];
+                way["name"="${currentStreet.name}"](around:500,${marketLatLng[0]},${marketLatLng[1]});
+                out geom;
+            `;
+            const url = 'https://overpass-api.de/api/interpreter?data=' + encodeURIComponent(query);
+            const response = await fetch(url);
+            const data = await response.json();
 
-function toggleSidebar(open) {
-    const sidebar = document.getElementById("sidebar");
-    if (open) {
-        sidebar.classList.add("open");
-    } else {
-        sidebar.classList.remove("open");
-    }
-}
+            data.elements.forEach(element => {
+                if (element.type === "way") {
+                    const coordinates = element.geometry.map(coord => [coord.lat, coord.lon]);
+                    L.polyline(coordinates, {
+                        color: color,
+                        weight: 5,
+                        opacity: 0.7
+                    }).addTo(map);
+                }
+            });
 
-document.getElementById("close-sidebar").onclick = function() {
-    toggleSidebar(false); // Schließe die Seitenleiste beim Klicken auf das "X"
-};
+            if (data.elements.length > 0) {
+                const firstSegment = data.elements[0].geometry;
+                const centerIndex = Math.floor(firstSegment.length / 2);
+                const centerLatLng = [firstSegment[centerIndex].lat, firstSegment[centerIndex].lon];
+                map.setView(centerLatLng, 15);
+            }
+        }
 
-document.getElementById("info-button").onclick = function() {
-    const sidebar = document.getElementById("sidebar");
-    if (sidebar.classList.contains("open")) {
-        toggleSidebar(false); // Schließe die Seitenleiste, wenn sie bereits offen ist
-    } else {
-        loadStreetInfo(currentStreet.name); // Lade Informationen und öffne die Seitenleiste
-    }
-};
+        async function loadStreetInfo(streetName) {
+            let searchTerm = streetName;
+            if (searchTerm.includes('-')) {
+                searchTerm = searchTerm.substring(0, searchTerm.lastIndexOf('-'));
+                searchTerm = searchTerm.replace(/-/g, ' ');
+            } else {
+                searchTerm = searchTerm.replace(/straße\b|gasse\b|weg\b|platz\b|ring\b|allee\b/gi, '').trim();
+            }
 
-map.on('click', async function(e) {
-    const lat = e.latlng.lat;
-    const lon = e.latlng.lng;
-    const clickedStreet = await checkStreet(lat, lon);
+            const url = `https://de.wikipedia.org/w/api.php?action=query&prop=extracts&explaintext&format=json&titles=${encodeURIComponent(searchTerm)}&origin=*`;
+            const response = await fetch(url);
+            const data = await response.json();
+            const pages = data.query.pages;
 
-    if (compareStreetNames(clickedStreet, currentStreet.name)) {
-        document.getElementById("feedback").textContent = `Richtig! Du hast die Straße gefunden: ${clickedStreet}`;
-        correctScore++;
+            if (pages) {
+                const page = Object.values(pages)[0];
+                if (page.extract) {
+                    document.getElementById("sidebar-content").innerHTML = page.extract;
+                    toggleSidebar(true);
+                } else {
+                    document.getElementById("sidebar-content").innerHTML = "Keine Informationen gefunden.";
+                    toggleSidebar(true);
+                }
+            } else {
+                document.getElementById("sidebar-content").innerHTML = "Keine Informationen gefunden.";
+                toggleSidebar(true);
+            }
+        }
 
-        // Grüne Linie zur Hervorhebung der richtigen Straße hinzufügen
-        await highlightCorrectStreet('green');
+        function updateScoreboard() {
+            document.getElementById("correct-score").textContent = correctScore;
+            document.getElementById("wrong-score").textContent = wrongScore;
 
-        addStreetToList(currentStreet, document.getElementById("correct-list"), correctStreets);
-        searchRadius += 50; // Erhöhe den Suchradius um 50 Meter
-    } else {
-        document.getElementById("feedback").textContent = `Falsch! Du hast auf die Straße ${clickedStreet} geklickt.`;
-        wrongScore++;
-        addStreetToList(currentStreet, document.getElementById("wrong-list"), wrongStreets);
-        searchRadius = 50; // Setze den Suchradius zurück auf 50 Meter
+            const correctList = document.getElementById("correct-list");
+            correctList.innerHTML = '';
+            correctStreets.forEach(street => {
+                const li = document.createElement("li");
+                li.textContent = street.name;
+                li.onclick = () => map.setView(street.coords[0], 15);
+                correctList.appendChild(li);
+            });
 
-        // Rote Linie zur Hervorhebung der richtigen Straße hinzufügen
-        await highlightCorrectStreet('red');
-    }
+            const wrongList = document.getElementById("wrong-list");
+            wrongList.innerHTML = '';
+            wrongStreets.forEach(street => {
+                const li = document.createElement("li");
+                li.textContent = street.name;
+                li.onclick = () => map.setView(street.coords[0], 15);
+                wrongList.appendChild(li);
+            });
+        }
 
-    // Scoreboard aktualisieren
-    updateScoreboard();
+        function addStreetToList(street, list, listArray) {
+            if (!listArray.some(s => s.name === street.name)) {
+                listArray.push(street);
+                const li = document.createElement("li");
+                li.textContent = street.name;
+                li.onclick = () => map.setView(street.coords[0], 15);
+                list.appendChild(li);
+            }
+        }
 
-    // Lade die Straßen im neuen Radius und wähle eine zufällige Straße aus
-    loadStreets();
-});
+        function toggleSidebar(open) {
+            const sidebar = document.getElementById("sidebar");
+            if (open) {
+                sidebar.classList.add("open");
+            } else {
+                sidebar.classList.remove("open");
+            }
+        }
 
-// Starten mit der Auswahl und dem Laden der Straßen
-loadStreets();
+        document.getElementById("close-sidebar").onclick = function() {
+            toggleSidebar(false);
+        };
 
+        document.getElementById("info-button").onclick = function() {
+            const sidebar = document.getElementById("sidebar");
+            if (sidebar.classList.contains("open")) {
+                toggleSidebar(false);
+            } else {
+                loadStreetInfo(currentStreet.name);
+            }
+        };
+
+        map.on('click', async function(e) {
+            const lat = e.latlng.lat;
+            const lon = e.latlng.lng;
+            const clickedStreet = await checkStreet(lat, lon);
+
+            if (compareStreetNames(clickedStreet, currentStreet.name)) {
+                document.getElementById("feedback").textContent = `Richtig! Du hast die Straße gefunden: ${clickedStreet}`;
+                correctScore++;
+
+                await highlightCorrectStreet('green');
+
+                addStreetToList(currentStreet, document.getElementById("correct-list"), correctStreets);
+                searchRadius += 50;
+            } else {
+                document.getElementById("feedback").textContent = `Falsch! Du hast auf die Straße ${clickedStreet} geklickt.`;
+                wrongScore++;
+                addStreetToList(currentStreet, document.getElementById("wrong-list"), wrongStreets);
+                searchRadius = 50;
+
+                await highlightCorrectStreet('red');
+            }
+
+            updateScoreboard();
+            loadStreets();
+        });
+
+        loadStreets();
     </script>
 </body>
 </html>
